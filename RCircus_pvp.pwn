@@ -34,6 +34,7 @@
 #define MAX_CLOWNS 30
 #define MAX_TRANSPORT 6
 #define MAX_PVP_PLAYERS 30
+#define MAX_RELIABLE_TARGETS 5
 
 //Effects IDs
 #define EFFECT_SHAZOK_GEAR 0
@@ -69,6 +70,7 @@ forward UpdatePvpPlayers();
 forward UpdatePvpTable();
 forward StopPvp();
 forward ReadyTimerTick();
+forward Float:GetDistanceBetweenPlayers(p1,p2);
 
 //Varialbles
 enum pInfo {
@@ -97,7 +99,10 @@ enum pInfo {
 	Dodge,
 	Accuracy,
 	TopPosition,
-	CriticalChance
+	CriticalChance,
+	Reaction,
+	PAccuracy,
+	Float:RangeRate
 };
 new PlayerInfo[MAX_PLAYERS][pInfo];
 new PlayerUpdater[MAX_PLAYERS];
@@ -360,7 +365,7 @@ public UpdatePlayer(playerid)
 
 public OnGameModeInit()
 {
-	SetGameModeText("RCircus 1.0");
+	SetGameModeText("RCircus Pvp");
 	ShowNameTags(1);
 	DisableInteriorEnterExits();
 	EnableStuntBonusForAll(0);
@@ -1483,6 +1488,47 @@ public OnPlayerClickPlayerTextDraw(playerid, PlayerText:playertextid)
     return 0;
 }
 
+public Float:GetDistanceBetweenPlayers(p1,p2)
+{
+	new Float:x1,Float:y1,Float:z1,Float:x2,Float:y2,Float:z2;
+	if(!IsPlayerConnected(p1) || !IsPlayerConnected(p2))
+		return -1;
+	GetPlayerPos(p1,x1,y1,z1);
+	GetPlayerPos(p2,x2,y2,z2);
+	return floatsqroot(floatpower(floatabs(floatsub(x2,x1)),2)+floatpower(floatabs(floatsub(y2,
+		y1)),2)+floatpower(floatabs(floatsub(z2,z1)),2));
+}
+
+public FCNPC_OnSpawn(npcid)
+{
+    FCNPC_SetHealth(npcid, 100);
+    FCNPC_SetWeapon(npcid, 8);
+    if (Attach3DTextLabelToPlayer(NPCName[npcid], npcid, 0.0, 0.0, 0.2) == 0) 
+		SendClientMessageToAll(COLOR_RED, "INVALID_3DTEXT_ID");
+}
+public FCNPC_OnRespawn(npcid)
+{
+    FCNPC_OnSpawn(npcid);
+    FCNPC_GoTo(npcid, 1304 + random(92), 2105 + random(85), 11.0234, MOVE_TYPE_SPRINT);
+}
+public FCNPC_OnDeath(npcid, killerid, weaponid)
+{
+	SendDeathMessage(killerid, npcid, weaponid);
+	NPCKills[killerid]++;
+	NPCDeaths[npcid]++;
+	CheckTimer[npcid] = SetTimerEx("CheckDead", 5000, false, "i", npcid);
+	SetPlayerTarget(killerid);
+	for (new i = 0; i < MAX_NPCS; i++)
+	    if (FCNPC_IsAimingAtPlayer(NPCs[i], npcid))
+	        SetPlayerTarget(NPCs[i]);
+}
+
+forward CheckDead(npcid);
+public CheckDead(npcid)
+{
+    if (FCNPC_IsDead(npcid)) FCNPC_Respawn(npcid);
+}
+
 //==============================================================================
 //========PvP=======
 stock StartPvp()
@@ -1526,13 +1572,61 @@ public StopPvp()
 	SetPlayerInterior(InitID, 0);
 	InitID = -1;
 }
+stock FindPlayerTarget(npcid, bool:by_minhp = false)
+{
+	new targetid = -1;
+	new nearest_targets[MAX_RELIABLE_TARGETS];
+	new targets_count = 0;
+	new Float:distances[MAX_PVP_PLAYERS];
+	new Float:available_dist = 0;
+
+	for (new i = 0; i < MAX_RELIABLE_TARGETS; i++)
+		nearest_targets[i] = -1;
+
+	for (new i = 0; i < MAX_PVP_PLAYERS; i++)
+		distances[i] = GetDistanceBetweenPlayers(npcid, NPCs[i]);
+	
+	SortArrayAscending(distances);
+	available_dist = distances[MAX_RELIABLE_TARGETS-1];
+
+    for (new i = 0; i < MAX_PVP_PLAYERS; i++) 
+	{
+		if(NPCs[i] == npcid || FCNPC_IsDead(NPCs[i]))
+			continue;
+		
+		new Float:dist;
+		dist = GetDistanceBetweenPlayers(npcid, NPCs[i]);
+		if(dist <= PlayerInfo[npcid][RangeRate] && dist <= available_dist)
+		{
+			nearest_targets[targets_count] = NPCs[i];
+			targets_count++;
+		}
+	}
+
+	if(!by_minhp)
+		return nearest_targets[0];
+
+	for (new i = 0; i < MAX_RELIABLE_TARGETS; i++)
+	{
+		new Float:min_hp = 101;
+		if(nearest_targets[i] == -1)
+			break;
+		
+		new Float:hp = FCNPC_GetHealth(nearest_targets[i]);
+		if(hp < min_hp)
+			targetid = nearest_targets[i];
+	}
+
+	return targetid;
+}
 public UpdatePvpPlayers()
 {
 	//
 }
 stock CreateNPCs()
 {
-	for (new i = 0; i < MAX_PVP_PLAYERS; i++) {
+	for (new i = 0; i < MAX_PVP_PLAYERS; i++) 
+	{
 		NPCs[i] = FCNPC_Create(npcclowns[i]);
 		LoadAccount(NPCs[i]);
 		SetPlayerColor(NPCs[i], GetHexColorByRate(PlayerInfo[NPCs[i]][Rate]));
@@ -1543,7 +1637,8 @@ stock CreateNPCs()
 }
 stock DeleteNPCs()
 {
-    for (new i = 0; i < MAX_PVP_PLAYERS; i++) {
+    for (new i = 0; i < MAX_PVP_PLAYERS; i++) 
+	{
 		SaveAccount(NPCs[i]);
 		KillTimer(CheckTimer[NPCs[i]]);
 		NPCKills[NPCs[i]] = 0;
@@ -1654,6 +1749,26 @@ stock SetRandomSkin(id)
 		PlayerInfo[id][Skin] = all_male_skins[idx];
 	else
 		PlayerInfo[id][Skin] = all_female_skins[idx];
+}
+stock SortArrayDescending(array[], const size = sizeof(array))
+{
+	for(new i = 1, j, key; i < size; i++)
+	{
+		key = array[i];
+		for(j = i - 1; j >= 0 && array[j] < key; j--)
+			array[j + 1] = array[j];
+		array[j + 1] = key;
+	}
+}
+stock SortArrayAscending(array[], const size = sizeof(array))
+{
+	for(new i = 1, j, key; i < size; i++)
+	{
+		key = array[i];
+		for(j = i - 1; j >= 0 && array[j] > key; j--)
+			array[j + 1] = array[j];
+		array[j + 1] = key;
+	}
 }
 
 //========Бои=======
@@ -3403,7 +3518,7 @@ stock LoadAccount(playerid) {
     ini_getInteger(File, "TopPosition", PlayerInfo[playerid][TopPosition]);
 	ini_getInteger(File, "Reaction", PlayerInfo[playerid][Reaction]);
 	ini_getInteger(File, "PAccuracy", PlayerInfo[playerid][PAccuracy]);
-	ini_getInteger(File, "RangeRate", PlayerInfo[playerid][RangeRate]);
+	ini_getFloat(File, "RangeRate", PlayerInfo[playerid][RangeRate]);
     ini_getFloat(File, "PosX", PlayerInfo[playerid][PosX]);
     ini_getFloat(File, "PosY", PlayerInfo[playerid][PosY]);
     ini_getFloat(File, "PosZ", PlayerInfo[playerid][PosZ]);
@@ -3460,7 +3575,7 @@ stock SaveAccount(playerid) {
     ini_setInteger(File, "TopPosition", PlayerInfo[playerid][TopPosition]);
 	ini_getInteger(File, "Reaction", PlayerInfo[playerid][Reaction]);
 	ini_getInteger(File, "PAccuracy", PlayerInfo[playerid][PAccuracy]);
-	ini_getInteger(File, "RangeRate", PlayerInfo[playerid][RangeRate]);
+	ini_getFloat(File, "RangeRate", PlayerInfo[playerid][RangeRate]);
     ini_setFloat(File, "PosX", PlayerInfo[playerid][PosX]);
     ini_setFloat(File, "PosY", PlayerInfo[playerid][PosY]);
     ini_setFloat(File, "PosZ", PlayerInfo[playerid][PosZ]);
@@ -3514,7 +3629,7 @@ stock CreateAccount(name[])
     ini_setInteger(File, "TopPosition", 0);
 	ini_getInteger(File, "Reaction", 0);
 	ini_getInteger(File, "PAccuracy", 0);
-	ini_getInteger(File, "RangeRate", 0);
+	ini_getFloat(File, "RangeRate", 0);
     ini_setFloat(File, "PosX", 0);
     ini_setFloat(File, "PosY", 0);
     ini_setFloat(File, "PosZ", 0);
