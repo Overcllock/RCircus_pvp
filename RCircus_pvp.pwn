@@ -381,6 +381,7 @@ public OnGameModeInit()
 	DisableInteriorEnterExits();
 	EnableStuntBonusForAll(0);
 	LimitPlayerMarkerRadius(1000.0);
+	FCNPC_SetUpdateRate(15);
 	ShowPlayerMarkers(PLAYER_MARKERS_MODE_GLOBAL);
 	DisableNameTagLOS();
 	SetNameTagDrawDistance(9999.0);
