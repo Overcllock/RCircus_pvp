@@ -1521,8 +1521,11 @@ public FCNPC_OnSpawn(npcid)
 }
 public FCNPC_OnRespawn(npcid)
 {
+	new idx = random(MAX_SPAWNS);
+	FCNPC_SetPosition(npcid, RandomSpawn[idx][X], RandomSpawn[idx][Y], RandomSpawn[idx][Z]);
     FCNPC_OnSpawn(npcid);
-    FCNPC_GoTo(npcid, 1304 + random(92), 2105 + random(85), 11.0234, MOVE_TYPE_SPRINT);
+	idx = random(MAX_SPAWNS);
+    FCNPC_GoTo(npcid, RandomSpawn[idx][X], RandomSpawn[idx][Y], RandomSpawn[idx][Z], MOVE_TYPE_SPRINT);
 }
 public FCNPC_OnDeath(npcid, killerid, weaponid)
 {
@@ -1531,14 +1534,11 @@ public FCNPC_OnDeath(npcid, killerid, weaponid)
 	NPCKills[killerid]++;
 	NPCDeaths[npcid]++;
 	CheckTimer[npcid] = SetTimerEx("CheckDead", 5000, false, "i", npcid);
-	SetPlayerTarget(killerid);
-	for (new i = 0; i < MAX_NPCS; i++)
-	    if (FCNPC_IsAimingAtPlayer(NPCs[i], npcid))
-	        SetPlayerTarget(NPCs[i]);
 }
 public FCNPC_OnUpdate(npcid)
 {
-	UpdatePvpPlayers();
+	if(IsPvpStarted)
+		UpdatePvpPlayers();
 }
 
 forward CheckDead(npcid);
@@ -1553,7 +1553,8 @@ public CheckDead(npcid)
 stock StartPvp()
 {
 	CreateNPCs();
-    for (new i = 0; i < MAX_PVP_PLAYERS; i++) {
+    for (new i = 0; i < MAX_PVP_PLAYERS; i++) 
+	{
 		SetRandomSkin(NPCs[i]);
 		FCNPC_Spawn(NPCs[i], PlayerInfo[NPCs[i]][Skin], 1304 + random(92), 2105 + random(85), 11.0234);
 		FCNPC_SetInterior(NPCs[i], 0);
@@ -1664,6 +1665,9 @@ stock MoveAround(playerid)
 }
 public RegenerateHealth(playerid)
 {
+	if(FCNPC_IsDead(playerid))
+		return;
+
 	new Float:hp = FCNPC_GetHealth(playerid);
 	hp = floatadd(hp, 3.0);
 	if(hp > 100)
@@ -1694,6 +1698,10 @@ public UpdatePvpPlayers()
 		//Checking available target
 		if(!FCNPC_IsAiming(id) && !FCNPC_IsDead(id))
 		{
+			new chance = random(100);
+			if(FCNPC_IsMoving(id) && chance > 5)
+				continue;
+			
 			SetPlayerTarget(id);
 			continue;
 		}
