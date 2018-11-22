@@ -35,6 +35,7 @@
 #define MAX_TRANSPORT 6
 #define MAX_PVP_PLAYERS 30
 #define MAX_RELIABLE_TARGETS 5
+#define MAX_PVP_PANEL_ITEMS 5
 
 //Effects IDs
 #define EFFECT_SHAZOK_GEAR 0
@@ -61,6 +62,9 @@
 #define PARAM_DODGE 2
 #define PARAM_ACCURACY 3
 #define PARAM_CRITICAL_CHANCE 4
+
+//Other
+#define NPC_TICKRATE 15
 
 //Forwards
 forward OnPlayerLogin(playerid);
@@ -127,6 +131,12 @@ new bool:IsReady[MAX_PLAYERS] = false;
 new bool:IsEntered[MAX_PLAYERS] = false;
 new bool:IsMatchRunned = false;
 //Pvp
+new PlayerText:PvpPanelBox[MAX_PLAYERS];
+new PlayerText:PvpPanelHeader[MAX_PLAYERS];
+new PlayerText:PvpPanelTimer[MAX_PLAYERS];
+new PlayerText:PvpPanelNameLabels[MAX_PLAYERS][MAX_PVP_PANEL_ITEMS];
+new PlayerText:PvpPanelScoreLabels[MAX_PLAYERS][MAX_PVP_PANEL_ITEMS];
+
 new InitID = -1;
 new bool:IsPvpStarted = false;
 new Text3D:NPCName[MAX_PLAYERS];
@@ -134,7 +144,6 @@ new NPCs[MAX_PVP_PLAYERS];
 new NPCKills[MAX_PLAYERS];
 new NPCDeaths[MAX_PLAYERS];
 new CheckTimer[MAX_PLAYERS];
-new PvpPlayersUpdTimer = -1;
 new PvpTableUpdTimer = -1;
 new StopPvpTimer = -1;
 new RegenTimer[MAX_PLAYERS];
@@ -1526,6 +1535,10 @@ public FCNPC_OnDeath(npcid, killerid, weaponid)
 	    if (FCNPC_IsAimingAtPlayer(NPCs[i], npcid))
 	        SetPlayerTarget(NPCs[i]);
 }
+public FCNPC_OnUpdate(npcid)
+{
+	UpdatePvpPlayers();
+}
 
 forward CheckDead(npcid);
 public CheckDead(npcid)
@@ -1545,8 +1558,8 @@ stock StartPvp()
 		FCNPC_SetInterior(NPCs[i], 0);
 	}
 	UpdatePvpPlayers();
+	PvpTtl = 180;
     StopPvpTimer = SetTimer("StopPvp", 180000, false);
-	PvpPlayersUpdTimer = SetTimer("UpdatePvpPlayers", 1000, true);
 	PvpTableUpdTimer = SetTimer("UpdatePvpTable", 1000, true);
 
 	SetPvpTableVisibility(true);
@@ -1558,7 +1571,6 @@ public StopPvp()
 	if(!IsPvpStarted)
 		return;
 
-	KillTimer(PvpPlayersUpdTimer);
 	if (StopPvpTimer != -1)
 		KillTimer(StopPvpTimer);
 	KillTimer(PvpTableUpdTimer);
@@ -1814,6 +1826,32 @@ stock UpdatePvpData()
         }
     }
 }
+public UpdatePvpTable()
+{
+	new score[64];
+	new id = -1;
+
+	UpdatePvpData();
+	for(new i = 0; i < MAX_PVP_PANEL_ITEMS; i++)
+	{
+		PlayerTextDrawSetString(InitID, PvpPanelNameLabels[InitID][i], PvpRes[i][Name]);
+		id = GetNPCIDByName(PvpRes[i][Name]);
+		PlayerTextDrawColor(InitID, PvpPanelNameLabels[InitID][i], GetHexColorByRate(PlayerInfo[id][Rate]));
+		format(score, sizeof(score), "%.3f", PvpRes[i][Score]);
+		PlayerTextDrawSetString(InitID, PvpPanelScoreLabels[InitID][i], score)
+	}
+
+	new minute, second;
+	new string[25];
+	PvpTtl--;
+	minute = PvpTtl / 60;
+	second = PvpTtl - minute * 60;
+	if(second <= 9)
+		format(string, 25, "%d:0%d", minute, second);
+	else
+		format(string, 25, "%d:%d", minute, second);
+	PlayerTextDrawSetString(InitID, PvpPanelTimer[InitID], string);
+}
 stock ChangeRate(playerid, diff)
 {
 	PlayerInfo[playerid][Rate] += diff;
@@ -1840,7 +1878,28 @@ stock GetRateDifference(pos, Float:k)
 }
 stock SetPvpTableVisibility(bool:value)
 {
-	//
+	if(value)
+	{
+		PlayerTextDrawShow(InitID, PvpPanelBox[InitID]);
+		PlayerTextDrawShow(InitID, PvpPanelHeader[InitID]);
+		PlayerTextDrawShow(InitID, PvpPanelTimer[InitID]);
+		for(new i = 0; i < MAX_PVP_PANEL_ITEMS; i++)
+		{
+			PlayerTextDrawShow(InitID, PvpPanelNameLabels[InitID][i]);
+			PlayerTextDrawShow(InitID, PvpPanelScoreLabels[InitID][i]);
+		}
+	}
+	else
+	{
+		PlayerTextDrawHide(InitID, PvpPanelBox[InitID]);
+		PlayerTextDrawHide(InitID, PvpPanelHeader[InitID]);
+		PlayerTextDrawHide(InitID, PvpPanelTimer[InitID]);
+		for(new i = 0; i < MAX_PVP_PANEL_ITEMS; i++)
+		{
+			PlayerTextDrawHide(InitID, PvpPanelNameLabels[InitID][i]);
+			PlayerTextDrawHide(InitID, PvpPanelScoreLabels[InitID][i]);
+		}
+	}
 }
 
 stock GetNPCIDByName(name[])
