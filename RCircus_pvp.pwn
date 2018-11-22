@@ -71,6 +71,7 @@ forward UpdatePvpTable();
 forward StopPvp();
 forward ReadyTimerTick();
 forward Float:GetDistanceBetweenPlayers(p1,p2);
+forward RegenerateHealth(playerid);
 
 //Varialbles
 enum pInfo {
@@ -101,7 +102,7 @@ enum pInfo {
 	TopPosition,
 	CriticalChance,
 	Reaction,
-	PAccuracy,
+	Float:PAccuracy,
 	Float:RangeRate
 };
 new PlayerInfo[MAX_PLAYERS][pInfo];
@@ -136,6 +137,7 @@ new CheckTimer[MAX_PLAYERS];
 new PvpPlayersUpdTimer = -1;
 new PvpTableUpdTimer = -1;
 new StopPvpTimer = -1;
+new RegenTimer[MAX_PLAYERS];
 enum PvpResItem
 {
 	Name[128],
@@ -1503,6 +1505,7 @@ public FCNPC_OnSpawn(npcid)
 {
     FCNPC_SetHealth(npcid, 100);
     FCNPC_SetWeapon(npcid, 8);
+	RegenTimer[npcid] = SetTimerEx("RegenerateHealth", 3000, true, "i", npcid);
     if (Attach3DTextLabelToPlayer(NPCName[npcid], npcid, 0.0, 0.0, 0.2) == 0) 
 		SendClientMessageToAll(COLOR_RED, "INVALID_3DTEXT_ID");
 }
@@ -1514,6 +1517,7 @@ public FCNPC_OnRespawn(npcid)
 public FCNPC_OnDeath(npcid, killerid, weaponid)
 {
 	SendDeathMessage(killerid, npcid, weaponid);
+	KillTimer(RegenTimer[npcid]);
 	NPCKills[killerid]++;
 	NPCDeaths[npcid]++;
 	CheckTimer[npcid] = SetTimerEx("CheckDead", 5000, false, "i", npcid);
@@ -1526,7 +1530,8 @@ public FCNPC_OnDeath(npcid, killerid, weaponid)
 forward CheckDead(npcid);
 public CheckDead(npcid)
 {
-    if (FCNPC_IsDead(npcid)) FCNPC_Respawn(npcid);
+    if (FCNPC_IsDead(npcid)) 
+		FCNPC_Respawn(npcid);
 }
 
 //==============================================================================
@@ -1619,9 +1624,112 @@ stock FindPlayerTarget(npcid, bool:by_minhp = false)
 
 	return targetid;
 }
+stock SetPlayerTarget(playerid)
+{
+	FCNPC_StopAim(playerid);
+	new targetid = FindPlayerTarget(playerid, true);
+	new Float:offset = PlayerInfo[playerid][PAccuracy];
+
+	if(targetid == -1)
+	{
+		MoveAround(playerid);
+		return 0;
+	}
+
+	FCNPC_AimAtPlayer(playerid, targetid, false, -1, true, 0, 0, 0, offset, offset, offset);
+	FCNPC_GoToPlayer(playerid, targetid);
+	return 1;
+}
+stock MoveAround(playerid)
+{
+	new Float:x_offset = -10 + random(20);
+	new Float:y_offset = -10 + random(20);
+	new Float:x, Float:y, Float:z;
+
+	FCNPC_GetPosition(playerid, x, y, z);
+	FCNPC_GoTo(playerid, x + x_offset, y + y_offset, z);
+}
+public RegenerateHealth(playerid)
+{
+	new Float:hp = FCNPC_GetHealth(playerid);
+	hp = floatadd(hp, 3.0);
+	if(hp > 100)
+		hp = 100;
+	FCNPC_SetHealth(playerid, hp);
+}
 public UpdatePvpPlayers()
 {
-	//
+	for (new i = 0; i < MAX_PVP_PLAYERS; i++)
+	{
+		new id = NPCs[i];
+
+		//If NPC bumped any obstacle - move him
+		if(FCNPC_IsMoving(id) && FCNPC_GetSpeed(id) < 0.1)
+		{
+			MoveAround(id);
+			continue;
+		}
+
+		//If player's HP is critical and enemy so close - run around
+		new Float:p_hp = FCNPC_GetHealth(id);
+		if(p_hp < 10 && GetMinDistanceForEnemy(id) < 3)
+		{
+			MoveAround(id);
+			continue;
+		}
+
+		//Checking available target
+		if(!FCNPC_IsAiming(id) && !FCNPC_IsDead(id))
+		{
+			SetPlayerTarget(id);
+			continue;
+		}
+
+		//If current target is dead, set new
+		new target = FCNPC_GetAimingPlayer(id);
+		if(target == -1)
+			continue;
+		if(FCNPC_IsDead(target))
+		{
+			SetPlayerTarget(id);
+			continue;
+		}
+
+		new Float:dist = GetDistanceBetweenPlayers(id, target);
+		if(!FCNPC_IsMovingToPlayer(id, target) && dist > 2)
+			FCNPC_GoToPlayer(id, target);
+
+		//If player so close to target - attack it
+		if(dist <= 2)
+		{
+			FCNPC_Stop(id);
+			FCNPC_MeleeAttack(id, PlayerInfo[id][Reaction]);
+		}
+		else
+			FCNPC_StopAttack(id);
+
+		//If there are targets with less HP beside player - change target
+		new potential_target = FindPlayerTarget(id, true);
+		if(potential_target != -1)
+		{
+			new Float:t_hp = FCNPC_GetHealth(target);
+			new Float:pt_hp = FCNPC_GetHealth(potential_target);
+			if(floatabs(floatsub(t_hp, pt_hp)) >= 50)
+				SetPlayerTarget(id);
+		}
+	}
+}
+stock GetMinDistanceForEnemy(playerid)
+{
+	new Float:min_dist = 1000;
+	for (new i = 0; i < MAX_PVP_PLAYERS; i++)
+	{
+		new enemy_id = NPCs[i];
+		new dist = GetDistanceBetweenPlayers(playerid, enemy_id);
+		if(FCNPC_IsAimingAtPlayer(enemy_id, playerid) && dist < min_dist)
+			min_dist = dist;
+	}
+	return min_dist;
 }
 stock CreateNPCs()
 {
@@ -1641,6 +1749,7 @@ stock DeleteNPCs()
 	{
 		SaveAccount(NPCs[i]);
 		KillTimer(CheckTimer[NPCs[i]]);
+		KillTimer(RegenTimer[NPCs[i]]);
 		NPCKills[NPCs[i]] = 0;
 		NPCDeaths[NPCs[i]] = 0;
 		FCNPC_Destroy(NPCs[i]);
@@ -3517,7 +3626,7 @@ stock LoadAccount(playerid) {
     ini_getInteger(File, "Loses", PlayerInfo[playerid][Loses]);
     ini_getInteger(File, "TopPosition", PlayerInfo[playerid][TopPosition]);
 	ini_getInteger(File, "Reaction", PlayerInfo[playerid][Reaction]);
-	ini_getInteger(File, "PAccuracy", PlayerInfo[playerid][PAccuracy]);
+	ini_getFloat(File, "PAccuracy", PlayerInfo[playerid][PAccuracy]);
 	ini_getFloat(File, "RangeRate", PlayerInfo[playerid][RangeRate]);
     ini_getFloat(File, "PosX", PlayerInfo[playerid][PosX]);
     ini_getFloat(File, "PosY", PlayerInfo[playerid][PosY]);
@@ -3573,9 +3682,9 @@ stock SaveAccount(playerid) {
     ini_setInteger(File, "Wins", PlayerInfo[playerid][Wins]);
     ini_setInteger(File, "Loses", PlayerInfo[playerid][Loses]);
     ini_setInteger(File, "TopPosition", PlayerInfo[playerid][TopPosition]);
-	ini_getInteger(File, "Reaction", PlayerInfo[playerid][Reaction]);
-	ini_getInteger(File, "PAccuracy", PlayerInfo[playerid][PAccuracy]);
-	ini_getFloat(File, "RangeRate", PlayerInfo[playerid][RangeRate]);
+	ini_setInteger(File, "Reaction", PlayerInfo[playerid][Reaction]);
+	ini_setFloat(File, "PAccuracy", PlayerInfo[playerid][PAccuracy]);
+	ini_setFloat(File, "RangeRate", PlayerInfo[playerid][RangeRate]);
     ini_setFloat(File, "PosX", PlayerInfo[playerid][PosX]);
     ini_setFloat(File, "PosY", PlayerInfo[playerid][PosY]);
     ini_setFloat(File, "PosZ", PlayerInfo[playerid][PosZ]);
@@ -3627,9 +3736,9 @@ stock CreateAccount(name[])
     ini_setInteger(File, "Wins", 0);
     ini_setInteger(File, "Loses", 0);
     ini_setInteger(File, "TopPosition", 0);
-	ini_getInteger(File, "Reaction", 0);
-	ini_getInteger(File, "PAccuracy", 0);
-	ini_getFloat(File, "RangeRate", 0);
+	ini_setInteger(File, "Reaction", 0);
+	ini_setFloat(File, "PAccuracy", 0);
+	ini_setFloat(File, "RangeRate", 0);
     ini_setFloat(File, "PosX", 0);
     ini_setFloat(File, "PosY", 0);
     ini_setFloat(File, "PosZ", 0);
