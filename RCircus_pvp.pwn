@@ -147,6 +147,7 @@ new bool:IsPvpStarted = false;
 new NPCs[MAX_PVP_PLAYERS];
 new NPCKills[MAX_PLAYERS];
 new NPCDeaths[MAX_PLAYERS];
+new NPCScore[MAX_PLAYERS];
 new CheckTimer[MAX_PLAYERS];
 new PvpTableUpdTimer = -1;
 new StopPvpTimer = -1;
@@ -155,7 +156,7 @@ new RegenTimer[MAX_PLAYERS];
 enum PvpResItem
 {
 	Name[128],
-	Float:Score
+	Score
 };
 new PvpRes[MAX_PVP_PLAYERS][PvpResItem];
 new PvpTtl = 0;
@@ -243,14 +244,14 @@ new all_reactions[MAX_PVP_PLAYERS][1] = {
 	{52},
 	{44},
 	{72},
-	{91},
-	{76},
-	{63},
+	{87},
+	{70},
+	{55},
 	{55},
 	{79},
-	{126},
-	{89},
-	{90},
+	{87},
+	{80},
+	{81},
 	{50},
 	{30}
 };
@@ -263,13 +264,13 @@ new Float:all_accuraces[MAX_PVP_PLAYERS][1] = {
 	{0.29},
 	{0.23},
 	{0.20},
-	{0.16},
-	{0.14},
-	{0.17},
+	{0.18},
+	{0.19},
+	{0.18},
 	{0.26},
-	{0.13},
+	{0.23},
 	{0.40},
-	{0.14},
+	{0.19},
 	{0.27},
 	{0.21},
 	{0.28},
@@ -280,43 +281,43 @@ new Float:all_accuraces[MAX_PVP_PLAYERS][1] = {
 	{0.26},
 	{0.19},
 	{0.27},
-	{0.14},
 	{0.18},
+	{0.22},
 	{0.19},
 	{0.22},
-	{0.16}
+	{0.19}
 };
 new Float:all_ranges[MAX_PVP_PLAYERS][1] = {
-	{11.0},
-	{12.0},
-	{9.0},
-	{12.0},
-	{10.0},
-	{7.0},
-	{7.0},
-	{7.0},
-	{9.0},
-	{8.0},
-	{6.0},
-	{5.0},
-	{6.0},
-	{8.0},
-	{6.0},
-	{8.0},
-	{7.0},
-	{8.0},
-	{5.0},
-	{6.0},
-	{4.0},
-	{6.0},
-	{7.0},
-	{8.0},
-	{6.0},
-	{7.0},
-	{8.0},
-	{6.0},
-	{8.0},
-	{9.0}
+	{21.0},
+	{22.0},
+	{19.0},
+	{22.0},
+	{20.0},
+	{17.0},
+	{17.0},
+	{17.0},
+	{19.0},
+	{18.0},
+	{16.0},
+	{15.0},
+	{16.0},
+	{18.0},
+	{16.0},
+	{18.0},
+	{17.0},
+	{18.0},
+	{15.0},
+	{16.0},
+	{14.0},
+	{16.0},
+	{17.0},
+	{18.0},
+	{16.0},
+	{17.0},
+	{18.0},
+	{16.0},
+	{18.0},
+	{19.0}
 };
 
 new Text:WorldTime;
@@ -869,6 +870,7 @@ public OnPlayerKeyStateChange(playerid, newkeys, oldkeys)
 			ShowPlayerDialog(playerid, 4000, DIALOG_STYLE_TABLIST_HEADERS, "Банкомат", listitems, "Далее", "Выход");
         }
         else if(IsPlayerInRangeOfPoint(playerid,1.2,-2171.3132,645.5896,1052.3817)) {
+			UpdateRatingTop();
 			ShowRatingTop(playerid);
         }
         else if(IsPlayerInRangeOfPoint(playerid,1.0,-2159.0491,640.3581,1052.3817) ||
@@ -1659,6 +1661,10 @@ public FCNPC_OnDeath(npcid, killerid, weaponid)
 	KillTimer(RegenTimer[npcid]);
 	NPCKills[killerid]++;
 	NPCDeaths[npcid]++;
+	NPCScore[killerid] += GetNPCScore(PlayerInfo[npcid][Rate], PlayerInfo[killerid][Rate], true);
+	NPCScore[npcid] -= GetNPCScore(PlayerInfo[npcid][Rate], PlayerInfo[killerid][Rate], false);
+	if(NPCScore[npcid] < 0)
+		NPCScore[npcid] = 0;
 	CheckTimer[npcid] = SetTimerEx("CheckDead", 5000, false, "i", npcid);
 }
 public UpdatePvp()
@@ -1678,6 +1684,17 @@ public CheckDead(npcid)
 
 //==============================================================================
 //========PvP=======
+stock GetNPCScore(rate1, rate2, bool:is_killer)
+{
+	new diff = rate1 - rate2;
+	if(diff > 0)
+		diff = floatround(floatmul(diff, 0.15));
+	else
+		diff = abs(floatround(floatmul(3001 - abs(diff), 0.007)));
+	if(is_killer)
+		diff += 50;
+	return diff;
+}
 stock StartPvp()
 {
 	CreateNPCs();
@@ -1799,6 +1816,11 @@ stock MoveAround(playerid)
 	new Float:x_offset = -10 + random(20);
 	new Float:y_offset = -10 + random(20);
 	new Float:x, Float:y, Float:z;
+	
+	while(x + x_offset < -2387 || x + x_offset > -2313)
+		x_offset = -10 + random(20);
+	while(y + y_offset < -1668 || y + y_offset > -1593)
+		y_offset = -10 + random(20);
 
 	FCNPC_GetPosition(playerid, x, y, z);
 	FCNPC_GoTo(playerid, x + x_offset, y + y_offset, z);
@@ -1884,6 +1906,7 @@ stock CreateNPCs()
 		SetWeaponParams(NPCs[i]);
 		NPCKills[NPCs[i]] = 0;
 		NPCDeaths[NPCs[i]] = 0;
+		NPCScore[NPCs[i]] = 0;
 	}
 }
 stock DeleteNPCs()
@@ -1895,6 +1918,7 @@ stock DeleteNPCs()
 		KillTimer(RegenTimer[NPCs[i]]);
 		NPCKills[NPCs[i]] = 0;
 		NPCDeaths[NPCs[i]] = 0;
+		NPCScore[NPCs[i]] = 0;
 		FCNPC_Destroy(NPCs[i]);
 	}
 }
@@ -1915,14 +1939,14 @@ stock SetWeaponParams(npcid)
 stock GetPvPResults()
 {
     UpdatePvpData();
-    new finout[4090] = "№  Имя\tУбийств\tСмертей\tКоэф.(рейт.)\n";
+    new finout[4090] = "№  Имя\tУбийств\tСмертей\tОчки\n";
     new output[120];
 	new r_color[64] = "33CC66";
 	new chr[8] = "+";
     for(new i = 0; i < MAX_PVP_PLAYERS; i++)
     {
 		new id = GetNPCIDByName(PvpRes[i][Name]);
-		new rate_diff = GetRateDifference(i+1, PvpRes[i][Score]);
+		new rate_diff = GetRateDifference(i+1);
 		ChangeRate(id, rate_diff);
 
 		if (i > MAX_PVP_PLAYERS / 2 - 1)
@@ -1930,7 +1954,7 @@ stock GetPvPResults()
 			r_color = "CC0000";
 			chr = "";
 		}
-		format(output,sizeof(output),"{CCFFFF}%d. {%s}%s\t{66CCFF}%d\t{9966CC}%d\t{FF9900}%.3f ({%s}%s%d)\n",
+		format(output,sizeof(output),"{CCFFFF}%d. {%s}%s\t{66CCFF}%d\t{9966CC}%d\t{FF9900}%d ({%s}%s%d)\n",
 			i+1,
 			GetColorByRate(PlayerInfo[id][Rate]),
 			PvpRes[i][Name],
@@ -1949,13 +1973,7 @@ stock UpdatePvpData()
 	new tmp[PvpResItem];
     for(new i = 0; i < MAX_PVP_PLAYERS; i++)
     {
-		new Float:k;
-		k = NPCKills[NPCs[i]];
-		if (NPCDeaths[NPCs[i]] > 0)
-		{
-			k = floatdiv(NPCKills[NPCs[i]], NPCDeaths[NPCs[i]]);
-		}
-		PvpRes[i][Score] = k;
+		PvpRes[i][Score] = NPCScore[NPCs[i]];
 		PvpRes[i][Name] = npcclowns[i];
     }
     for(new i = 0; i < MAX_PVP_PLAYERS; i++)
@@ -1985,7 +2003,7 @@ public UpdatePvpTable()
 		PlayerTextDrawSetString(InitID, PvpPanelNameLabels[InitID][i], name);
 		id = GetNPCIDByName(PvpRes[i][Name]);
 		PlayerTextDrawColor(InitID, PvpPanelNameLabels[InitID][i], GetHexColorByRate(PlayerInfo[id][Rate]));
-		format(score, sizeof(score), "%.3f", PvpRes[i][Score]);
+		format(score, sizeof(score), "%d", PvpRes[i][Score]);
 		PlayerTextDrawSetString(InitID, PvpPanelScoreLabels[InitID][i], score);
 		PlayerTextDrawShow(InitID, PvpPanelNameLabels[InitID][i]);
 	}
@@ -2009,20 +2027,15 @@ stock ChangeRate(playerid, diff)
 	if(PlayerInfo[playerid][Rate] > 3000)
 		PlayerInfo[playerid][Rate] = 3000;
 }
-stock GetRateDifference(pos, Float:k)
+stock GetRateDifference(pos)
 {
 	new diff = 0;
-	new ratebase = 1;
-
-	if(k > 0.1)
-		ratebase = floatround(floatmul(k, 10.0));
-	if(ratebase > 30)
-		ratebase = 30;
+	new ratebase = 5;
 
 	if(pos <= MAX_PVP_PLAYERS / 2)
-		diff = ratebase + (MAX_PVP_PLAYERS / 2 + 1) - pos;
+		diff = ratebase * ((MAX_PVP_PLAYERS / 2 + 1) - pos);
 	else
-		diff = ratebase - (MAX_PVP_PLAYERS / 2 + 1) - pos;
+		diff = ratebase * ((MAX_PVP_PLAYERS / 2) - pos);
 	return diff;
 }
 stock SetPvpTableVisibility(bool:value)
@@ -2086,6 +2099,10 @@ stock SortArrayAscending(Float:array[], const size = sizeof(array))
 			array[j + 1] = array[j];
 		array[j + 1] = key;
 	}
+}
+stock abs(value)
+{
+    return ((value < 0 ) ? (-value) : (value));
 }
 
 //========Бои=======
@@ -3872,9 +3889,6 @@ stock SaveAccount(playerid) {
 	new path[128];
 	format(path, sizeof(path), "Players/%s.ini", name);
 	new File = ini_openFile(path);
-	if (!File)
-		return -1;
-	
 	ini_setInteger(File, "Sex", PlayerInfo[playerid][Sex]);
 	ini_setInteger(File, "Rate", PlayerInfo[playerid][Rate]);
     ini_setInteger(File, "Class", PlayerInfo[playerid][Class]);
@@ -3924,13 +3938,8 @@ stock CreateAccount(name[], reaction, Float:accuracy, Float:range)
 	new path[128];
 	format(path, sizeof(path), "Players/%s.ini", name);
 	new File = ini_createFile(path);
-	if(File < 0)
-		File = ini_openFile(path);
-	if(!File)
-		return -1;
-
 	ini_setInteger(File, "Sex", 0);
-	ini_setInteger(File, "Rate", 450);
+	ini_setInteger(File, "Rate", 1300);
     ini_setInteger(File, "Class", -1);
     ini_setInteger(File, "Cash", 0);
     ini_setInteger(File, "Bank", 0);
